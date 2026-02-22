@@ -66,3 +66,4 @@ With `--hidden`: `"hello world\n"` group becomes 4 files (`hidden/.hidden_dup.tx
 | `doc/test-plan/basics.md` | Basic scan / list / remove test cases |
 | `doc/test-plan/symlinks.md` | Symlink behaviour test cases |
 | `doc/test-plan/manual_test_cases.md` | TUI test cases (require a real terminal) |
+| `doc/test-plan/detect_changes.md` | Change detection test cases (modified/deleted/added files) |
