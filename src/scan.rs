@@ -121,6 +121,16 @@ pub fn run(args: &ScanArgs, config: &Config, db: &Db) -> Result<()> {
             }
         }
 
+        // Directory deletion detection: child dirs in DB but not on the filesystem
+        let fs_subdir_set: std::collections::HashSet<String> =
+            fs_subdirs.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        for child in db.child_directories(&dir_str)? {
+            if !fs_subdir_set.contains(&child.canonical_path) {
+                db.delete_directory_tree(&child.canonical_path)?;
+                progress.log(format!("Removed deleted directory: {}", child.canonical_path));
+            }
+        }
+
         // Process each filesystem file
         let db_file_map: std::collections::HashMap<&str, &crate::db::FileRow> =
             db_files.iter().map(|f| (f.name.as_str(), f)).collect();

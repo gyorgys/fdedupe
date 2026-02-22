@@ -127,6 +127,16 @@ impl Db {
         Ok(())
     }
 
+    /// Delete a directory and every descendant directory from the DB.
+    /// Files are removed automatically via ON DELETE CASCADE on files.directory_id.
+    pub fn delete_directory_tree(&self, canonical_path: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM directories WHERE canonical_path = ?1 OR canonical_path LIKE ?1 || '/%'",
+            params![canonical_path],
+        )?;
+        Ok(())
+    }
+
     pub fn child_directories(&self, parent_path: &str) -> Result<Vec<DirectoryRow>> {
         // Direct children only: one extra path component, no trailing slash variant
         let prefix = format!("{}/", parent_path.trim_end_matches('/'));

@@ -185,29 +185,32 @@ sqlite3 testdata/fdedupe.db \
 
 ## Directory deletion
 
-### TC-CHG-09 — Deleted directory rows remain in DB (known limitation)
+### TC-CHG-09 — Deleted directory purged from DB on parent rescan
 
-The scan algorithm detects deleted **files** within a directory it processes, but it does not walk the DB to find directories that no longer exist on disk. If a directory is deleted, its row (and its files) remain in the DB until they are explicitly removed.
+When a directory is deleted from the filesystem and its parent is rescanned, the deleted directory and all its descendants are removed from the DB (files cascade via `ON DELETE CASCADE`). The `"hello world\n"` group shrinks accordingly, and `cleanup_singleton_groups` clears the `full_hash` on the sole remaining copy if the group falls to one member.
 
 ```bash
 cargo run --bin mktest
 cargo run -- --db testdata/fdedupe.db scan testdata --recursive
 rm -rf testdata/alpha/nested/
-# Rescan alpha/ and its tree
-cargo run -- --db testdata/fdedupe.db scan testdata/alpha --recursive --rescan
+# Rescan alpha/ — parent detects nested/ is gone
+cargo run -- --db testdata/fdedupe.db scan testdata/alpha --rescan
 ```
 
-**Expected (current behaviour)**:
-- `alpha/` is processed: its own files are checked, `nested/` is not found on disk so it is not enqueued.
-- The `directories` row for `alpha/nested/` and its two file rows (`hello_copy.txt`, `unique_b.txt`) **remain in the DB**.
-- Duplicate counts may be inflated: `"hello world\n"` still shows 3 files even though one copy no longer exists.
-
-**Desired future behaviour**: a full-tree rescan should detect and remove directory rows whose paths no longer exist, then cascade-delete their files.
+**Expected**:
+- Scan logs `"Removed deleted directory: .../testdata/alpha/nested"`.
+- The `directories` row for `alpha/nested/` is absent from the DB.
+- Both file rows (`hello_copy.txt`, `unique_b.txt`) are absent.
+- `"hello world\n"` group shrinks from 3 to 2 files (`alpha/hello.txt` and `beta/hello_again.txt`).
 
 ```bash
-# Confirm the stale rows are still present
 sqlite3 testdata/fdedupe.db "SELECT canonical_path FROM directories WHERE canonical_path LIKE '%nested%'"
-# Currently returns the nested/ row; a future fix would return nothing
+# Expected: (empty)
+sqlite3 testdata/fdedupe.db "SELECT name FROM files WHERE canonical_path LIKE '%nested%'"
+# Expected: (empty)
+sqlite3 testdata/fdedupe.db \
+  "SELECT COUNT(*) FROM files WHERE full_hash = (SELECT full_hash FROM files WHERE name='hello.txt')"
+# Expected: 2
 ```
 
 ---
@@ -224,4 +227,4 @@ sqlite3 testdata/fdedupe.db "SELECT canonical_path FROM directories WHERE canoni
 | Hidden file deleted, hidden=true | Yes | Deletion detection includes hidden entries |
 | New file added | Yes | Directory rescanned |
 | New file added, directory skipped | No | Directory already marked scanned, no `--rescan` |
-| Directory deleted | No (limitation) | No directory-level deletion walk implemented |
+| Directory deleted | Yes | Parent directory rescanned (`--rescan` or first scan of parent) |
