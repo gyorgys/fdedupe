@@ -1,0 +1,25 @@
+[package]
+name = "fdedupe"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "fdedupe"
+path = "src/main.rs"
+
+[[bin]]
+name = "mktest"
+path = "src/bin/mktest.rs"
+
+[dependencies]
+anyhow = "1"
+blake3 = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+globset = "0.4"
+ratatui = "0.28"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+walkdir = "2"
