@@ -62,4 +62,7 @@ With `--hidden`: `"hello world\n"` group becomes 4 files (`hidden/.hidden_dup.tx
 | `src/list_tui.rs` | Interactive directory browser TUI |
 | `src/remove.rs` | Remove mode TUI |
 | `src/bin/mktest.rs` | Test data generator |
-| `.claude/plan.md` | Full implementation plan |
+| `doc/architecture.md` | Module structure, schema, algorithms |
+| `doc/test-plan/basics.md` | Basic scan / list / remove test cases |
+| `doc/test-plan/symlinks.md` | Symlink behaviour test cases |
+| `doc/test-plan/manual_test_cases.md` | TUI test cases (require a real terminal) |

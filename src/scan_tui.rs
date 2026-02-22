@@ -20,6 +20,7 @@ pub struct ScanProgress {
     files_deleted: u64,
     log_lines: Vec<String>,
     start: Instant,
+    /// None when not in a TTY — falls back to plain stdout output.
     terminal: Option<Terminal<CrosstermBackend<Stdout>>>,
 }
 
@@ -38,14 +39,26 @@ impl ScanProgress {
 
     pub fn start(&mut self) -> Result<()> {
         self.start = Instant::now();
-        self.terminal = Some(tui::enter()?);
-        self.render()?;
+        match tui::enter() {
+            Ok(t) => {
+                self.terminal = Some(t);
+                self.render()?;
+            }
+            Err(_) => {
+                // Not a TTY (e.g. piped output, VS Code embedded terminal) — plain mode.
+                eprintln!("(scan progress: plain output mode)");
+            }
+        }
         Ok(())
     }
 
     pub fn set_current_dir(&mut self, dir: String) {
         self.current_dir = dir;
-        let _ = self.render();
+        if self.terminal.is_some() {
+            let _ = self.render();
+        } else {
+            eprintln!("Scanning: {}", self.current_dir);
+        }
     }
 
     pub fn inc_scanned(&mut self) {
@@ -64,6 +77,9 @@ impl ScanProgress {
     }
 
     pub fn log(&mut self, msg: String) {
+        if self.terminal.is_none() {
+            eprintln!("{}", msg);
+        }
         self.log_lines.push(msg);
         if self.log_lines.len() > 100 {
             self.log_lines.remove(0);

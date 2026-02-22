@@ -6,6 +6,10 @@
 ///   "hello world\n"   — 3 files (4 with --hidden)  — 12 bytes each
 ///   "roses are red\n" — 2 files                    — 15 bytes each
 ///   128 KB 0xAB block — 2 files                    — 131072 bytes each
+///
+/// Symlink layout (Unix only):
+///   testdata/gamma/alpha_link -> ../alpha
+///   Used to test --follow-symlinks behaviour.
 
 use std::fs;
 use std::io::Write;
@@ -47,6 +51,14 @@ fn main() {
     fs::create_dir_all(&gamma).unwrap();
     write_file(&gamma.join("poem_copy.txt"), b"roses are red\n");
 
+    // Symlink: gamma/alpha_link -> ../alpha
+    // Points at testdata/alpha/ from inside testdata/gamma/.
+    // Used to exercise --follow-symlinks (with canonical-path dedup) and
+    // the default behaviour of not following symlinks.
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("../alpha", &gamma.join("alpha_link"))
+        .unwrap_or_else(|e| eprintln!("warning: could not create symlink: {e}"));
+
     // ── large/ ────────────────────────────────────────────────────────────────
     let large = root.join("large");
     fs::create_dir_all(&large).unwrap();
@@ -69,6 +81,8 @@ fn main() {
     println!("  \"roses are red\\n\"  2 files   15 bytes each");
     println!("  128 KB 0xAB block  2 files   131072 bytes each");
     println!();
+    println!("Symlink (Unix): testdata/gamma/alpha_link -> ../alpha");
+    println!();
     println!("Test commands (DB isolated in testdata/):");
     println!("  cargo run -- --db {db} scan testdata --recursive");
     println!("  cargo run -- --db {db} list testdata");
@@ -78,6 +92,10 @@ fn main() {
     println!("With --hidden:");
     println!("  cargo run -- --db {db} scan testdata --recursive --hidden");
     println!("  (\"hello world\\n\" becomes 4 files)");
+    println!();
+    println!("Symlink tests (see doc/test-plan/symlinks.md):");
+    println!("  cargo run -- --db {db} scan testdata --recursive               # gamma/alpha_link ignored");
+    println!("  cargo run -- --db {db} scan testdata --recursive --follow-symlinks  # link followed, no double-count");
 }
 
 fn write_file(path: &Path, content: &[u8]) {
