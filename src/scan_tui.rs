@@ -124,10 +124,13 @@ impl ScanProgress {
 
             // Status panel
             let elapsed_str = format!("{:.1}s", elapsed.as_secs_f64());
+            // "Scanning: " is 10 chars; subtract 2 for borders.
+            let path_width = (chunks[0].width as usize).saturating_sub(2 + 10);
+            let truncated_dir = tui::truncate_path(&current_dir, path_width);
             let status_text = vec![
                 Line::from(vec![
                     Span::styled("Scanning: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw(&current_dir),
+                    Span::raw(truncated_dir),
                 ]),
                 Line::from(""),
                 Line::from(vec![

@@ -43,6 +43,18 @@ pub fn is_key(key: &KeyEvent, code: KeyCode) -> bool {
     key.code == code && key.modifiers == KeyModifiers::NONE
 }
 
+/// Truncate a path string to `max_len` visible characters, keeping the tail.
+/// If the path is longer than `max_len`, the beginning is replaced with "…".
+pub fn truncate_path(path: &str, max_len: usize) -> String {
+    let chars: Vec<char> = path.chars().collect();
+    if chars.len() <= max_len {
+        return path.to_string();
+    }
+    let keep = max_len.saturating_sub(1); // 1 char for "…"
+    let tail: String = chars[chars.len() - keep..].iter().collect();
+    format!("…{}", tail)
+}
+
 /// Human-readable byte size (e.g. "1.2 GB").
 pub fn fmt_size(bytes: i64) -> String {
     const KB: f64 = 1024.0;

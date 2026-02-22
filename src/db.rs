@@ -58,8 +58,11 @@ impl Db {
             CREATE TABLE IF NOT EXISTS directories (
                 id             INTEGER PRIMARY KEY,
                 canonical_path TEXT NOT NULL UNIQUE,
-                last_scanned   INTEGER
+                last_scanned   INTEGER,
+                parent_id      INTEGER REFERENCES directories(id)
             );
+
+            CREATE INDEX IF NOT EXISTS idx_directories_parent ON directories(parent_id);
 
             CREATE TABLE IF NOT EXISTS files (
                 id             INTEGER PRIMARY KEY,
@@ -107,9 +110,14 @@ impl Db {
 
     /// Get or insert a directory row; returns its id.
     pub fn upsert_directory(&self, canonical_path: &str) -> Result<i64> {
+        let parent_path = std::path::Path::new(canonical_path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .map(str::to_owned);
         self.conn.execute(
-            "INSERT OR IGNORE INTO directories(canonical_path) VALUES(?1)",
-            params![canonical_path],
+            "INSERT OR IGNORE INTO directories(canonical_path, parent_id)
+             VALUES(?1, (SELECT id FROM directories WHERE canonical_path = ?2))",
+            params![canonical_path, parent_path],
         )?;
         let id: i64 = self.conn.query_row(
             "SELECT id FROM directories WHERE canonical_path = ?1",
@@ -131,25 +139,24 @@ impl Db {
     /// Files are removed automatically via ON DELETE CASCADE on files.directory_id.
     pub fn delete_directory_tree(&self, canonical_path: &str) -> Result<()> {
         self.conn.execute(
-            "DELETE FROM directories WHERE canonical_path = ?1 OR canonical_path LIKE ?1 || '/%'",
+            "WITH RECURSIVE subtree(id) AS (
+                 SELECT id FROM directories WHERE canonical_path = ?1
+                 UNION ALL
+                 SELECT d.id FROM directories d JOIN subtree s ON d.parent_id = s.id
+             )
+             DELETE FROM directories WHERE id IN (SELECT id FROM subtree)",
             params![canonical_path],
         )?;
         Ok(())
     }
 
     pub fn child_directories(&self, parent_path: &str) -> Result<Vec<DirectoryRow>> {
-        // Direct children only: one extra path component, no trailing slash variant
-        let prefix = format!("{}/", parent_path.trim_end_matches('/'));
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, canonical_path, last_scanned FROM directories
-             WHERE canonical_path LIKE ?1 ESCAPE '\\'
-               AND canonical_path NOT LIKE ?2 ESCAPE '\\'",
+             WHERE parent_id = (SELECT id FROM directories WHERE canonical_path = ?1)",
         )?;
-        // matches prefix + one segment (no further slash)
-        let like_direct = format!("{}%", escape_like(&prefix));
-        let like_nested = format!("{}%/%", escape_like(&prefix));
         let rows = stmt
-            .query_map(params![like_direct, like_nested], |r| {
+            .query_map(params![parent_path.trim_end_matches('/')], |r| {
                 Ok(DirectoryRow {
                     id: r.get(0)?,
                     canonical_path: r.get(1)?,
@@ -287,21 +294,20 @@ impl Db {
 
     /// Count and total size of duplicate files under (and including) the given path prefix.
     pub fn duplicate_stats_under(&self, path_prefix: &str) -> Result<(i64, i64)> {
-        let prefix = format!("{}/", path_prefix.trim_end_matches('/'));
-        // Files directly in the directory or under it
-        let like = format!("{}%", escape_like(&prefix));
         let (count, size): (i64, i64) = self.conn.query_row(
-            "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files
-             WHERE full_hash IS NOT NULL
-               AND (canonical_path LIKE ?1 ESCAPE '\\' OR canonical_path LIKE ?2 ESCAPE '\\')
+            "WITH RECURSIVE subtree(id) AS (
+                 SELECT id FROM directories WHERE canonical_path = ?1
+                 UNION ALL
+                 SELECT d.id FROM directories d JOIN subtree s ON d.parent_id = s.id
+             )
+             SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files
+             WHERE directory_id IN (SELECT id FROM subtree)
+               AND full_hash IS NOT NULL
                AND full_hash IN (
                    SELECT full_hash FROM files WHERE full_hash IS NOT NULL
                    GROUP BY full_hash HAVING COUNT(*) > 1
                )",
-            params![
-                format!("{}%", escape_like(path_prefix)),
-                like
-            ],
+            params![path_prefix.trim_end_matches('/')],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         Ok((count, size))
@@ -367,6 +373,3 @@ fn file_from_row(r: &rusqlite::Row) -> rusqlite::Result<FileRow> {
     })
 }
 
-fn escape_like(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
-}
